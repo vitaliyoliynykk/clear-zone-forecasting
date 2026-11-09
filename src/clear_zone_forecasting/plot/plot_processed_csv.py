@@ -14,7 +14,7 @@ COLORS = {"co2": "#2b6cb0", "temp": "#dd6b20", "hum": "#2f855a"}
 
 
 def load_processed_data(csv_path: Path) -> pd.DataFrame:
-    """Read a processed CSV with ``ts,co2,temp,hum`` columns."""
+    """Read processed sensor data and an optional ``segment_id`` column."""
     data = pd.read_csv(csv_path)
     required = {"ts", *SENSORS}
     missing = required - set(data.columns)
@@ -33,7 +33,11 @@ def load_processed_data(csv_path: Path) -> pd.DataFrame:
         data[sensor] = pd.to_numeric(data[sensor], errors="coerce")
 
     data = data.sort_values("ts").set_index("ts")
-    return data.loc[:, SENSORS]
+    columns = [*SENSORS]
+    if "segment_id" in data.columns:
+        data["segment_id"] = pd.to_numeric(data["segment_id"], errors="coerce")
+        columns.append("segment_id")
+    return data.loc[:, columns]
 
 
 def plot_processed_csv(csv_path: Path, output_path: Path | None = None) -> None:
@@ -47,6 +51,32 @@ def plot_processed_csv(csv_path: Path, output_path: Path | None = None) -> None:
         axis.set_title(sensor.upper())
         axis.set_ylabel("Value")
         axis.grid(True, alpha=0.3)
+
+    if "segment_id" in data.columns:
+        segment_ids = data["segment_id"].dropna().unique()
+        for segment_id in sorted(segment_ids):
+            segment = data.loc[data["segment_id"] == segment_id]
+            if segment.empty:
+                continue
+            midpoint = segment.index[len(segment) // 2]
+            for axis in axes:
+                axis.axvspan(
+                    segment.index[0],
+                    segment.index[-1],
+                    color="#718096",
+                    alpha=0.08,
+                    linewidth=0,
+                )
+                axis.text(
+                    midpoint,
+                    0.95,
+                    f"Segment {int(segment_id)}",
+                    transform=axis.get_xaxis_transform(),
+                    ha="center",
+                    va="top",
+                    fontsize=8,
+                    color="#4a5568",
+                )
 
     axes[-1].set_xlabel("Time (UTC)")
     fig.suptitle(f"Processed sensor measurements — {csv_path.name}")
