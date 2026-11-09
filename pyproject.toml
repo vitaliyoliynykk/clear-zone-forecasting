@@ -6,20 +6,26 @@ readme = "README.md"
 authors = [
     { name = "Олійник Віталій Миронович", email = "vitaliyoliynykk@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "matplotlib>=3.11.2",
-    "numpy>=2.5.4",
+    "numpy>=1.26,<2.1",
     "pandas>=3.1.1",
     "pyarrow>=26.0.1",
     "pymongo>=4.19.0",
     "python-dotenv>=1.2.4",
     "scikit-learn>=1.9.1",
-    "torch>=2.15.0",
+    "keras>=3.0.0",
+    "tensorflow>=2.18.1,<2.19",
+    "tensorflow-metal>=1.2.0; sys_platform == 'darwin'",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.scripts]
 clear-zone-forecasting = "clear_zone_forecasting:main"
+process_data = "clear_zone_forecasting.process_data:main"
+plot_processed = "clear_zone_forecasting.plot.plot_processed_csv:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]

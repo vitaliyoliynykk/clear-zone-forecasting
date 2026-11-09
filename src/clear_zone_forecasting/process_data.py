@@ -9,7 +9,7 @@ import pandas as pd
 
 
 SENSORS = ("co2", "temp", "hum")
-MIN_SEGMENT_LENGTH = 180
+MIN_SEGMENT_LENGTH = 360
 
 
 def clean_csv(input_path: Path) -> pd.DataFrame:
@@ -135,16 +135,25 @@ def main() -> None:
         type=Path,
         help="Output CSV (default: <input-name>-processed.csv beside the input)",
     )
+    parser.add_argument(
+        "--parquet-output",
+        type=Path,
+        help="Output Parquet file (default: same path as CSV output with .parquet extension)",
+    )
     args = parser.parse_args()
     output_path = args.output or args.input_csv.with_name(
         f"{args.input_csv.stem}-processed.csv"
     )
+    parquet_output_path = args.parquet_output or output_path.with_suffix(".parquet")
     try:
         cleaned = clean_csv(args.input_csv)
         resampled = resample_csv(cleaned)
         result = segment_data(resampled)
 
         result.to_csv(output_path, date_format="%Y-%m-%dT%H:%M:%SZ", na_rep="")
+        result.to_parquet(parquet_output_path)
+        print(f"CSV saved to {output_path}")
+        print(f"Parquet saved to {parquet_output_path}")
     except (OSError, ValueError, pd.errors.ParserError) as error:
         parser.error(str(error))
 
