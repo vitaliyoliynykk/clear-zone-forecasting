@@ -93,8 +93,8 @@ def main() -> None:
         description="Plot raw CO2 readings and 15-minute-step rolling forecasts."
     )
     parser.add_argument("input_csv", type=Path, help="Raw ts,value,sensor CSV")
-    parser.add_argument("--model", type=Path, default=Path("models/co2_lstm.keras"))
-    parser.add_argument("--scaler", type=Path, default=Path("models/co2_scaler.pkl"))
+    parser.add_argument("--model", type=Path, default=Path("models/co2_lstm_v1.keras"))
+    parser.add_argument("--scaler", type=Path, default=Path("models/co2_lstm_v1_scaler.pkl"))
     parser.add_argument("-o", "--output", type=Path, help="Save plot to this image path")
     args = parser.parse_args()
 

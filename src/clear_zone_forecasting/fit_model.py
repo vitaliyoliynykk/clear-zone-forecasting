@@ -1,12 +1,14 @@
+import json
 import pickle
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 import keras
-from keras import layers
+from keras import Model, layers
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import tf2onnx
 
 from sklearn.preprocessing import StandardScaler
 
@@ -35,14 +37,14 @@ def build_model() -> keras.Model:
     return model
 
 
-def build_lstm_model() -> keras.Model:
+def build_lstm_model(name: str) -> keras.Model:
     inputs = keras.Input(shape=(WINDOW_SIZE, len(FEATURES)), name="sensor_window")
     x = layers.LSTM(32, return_sequences=True, dropout=0.05)(inputs)
     x = layers.LSTM(16, dropout=0.05)(x)
     x = layers.Dense(8, activation="relu")(x)
     outputs = layers.Dense(len(FORECAST_HORIZONS), name="co2_forecasts")(x)
 
-    model = keras.Model(inputs, outputs, name="co2_lstm")
+    model = keras.Model(inputs, outputs, name=name)
     model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3), loss="mse")
     return model
 
@@ -181,6 +183,43 @@ def prepare_features(df, scaler):
 
     return df
 
+def save_mode_metadata(
+    model: Model,
+    x: np.ndarray,
+    y: np.ndarray,
+    std: float,
+    unit: str,
+    target_value: str
+) -> None:
+    predictions = model.predict(x, verbose=0)
+
+    metrics_by_horizon = {}
+
+    for index, horizon in enumerate(FORECAST_HORIZONS):
+        errors = (y[:, index] - predictions[:, index]) * std
+        metrics_by_horizon[f"{horizon}_minutes"] = {
+            "mae": float(np.mean(np.abs(errors))),
+            "mse": float(np.mean(np.square(errors))),
+            "rmse": float(np.sqrt(np.mean(np.square(errors)))),
+        }
+
+    metadata = {
+        "model_name": model.name,
+        "window_size": WINDOW_SIZE,
+        "forecast_horizons_minutes": FORECAST_HORIZONS,
+        "features": FEATURES,
+        "num_params": model.count_params(),
+        "test_metrics": metrics_by_horizon,
+        "unit": unit,
+        "target_value": target_value
+    }
+
+    print
+
+    with open(artifacts_dir / f"{model.name}_metadata.json", "w") as f:
+        json.dump(metadata, f)
+
+
 df = read_file()
 train_df, val_df, test_df = get_temporal_split(df)
 
@@ -206,20 +245,6 @@ print("X_val:", np.isfinite(X_val).all(), "NaN:", np.isnan(X_val).sum())
 print("y_val:", np.isfinite(y_val).all(), "NaN:", np.isnan(y_val).sum())
 
 
-
-
-# def train(epochs: int = 20) -> keras.callbacks.History:
-#     model = build_model()
-#     return model.fit(
-#         X_train,
-#         y_train,
-#         validation_data=(X_val, y_val),
-#         epochs=epochs,
-#         batch_size=64,
-#         shuffle=True,
-#     )
-
-
 if __name__ == "__main__":
     gpus = tf.config.list_physical_devices("GPU")
     if gpus:
@@ -227,7 +252,7 @@ if __name__ == "__main__":
     else:
         print("TensorFlow GPU not found; training will use CPU.")
 
-    model = build_lstm_model()
+    model = build_lstm_model("co2_lstm_v1")
     history = model.fit(
         X_train,
         y_train,
@@ -239,14 +264,46 @@ if __name__ == "__main__":
 
     artifacts_dir = Path("models")
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    model.save(artifacts_dir / "co2_lstm.keras")
 
-    with (artifacts_dir / "co2_scaler.pkl").open("wb") as scaler_file:
+    # Re-trace LSTM layers through Keras' portable implementation for ONNX.
+    # Otherwise TensorFlow may emit CudnnRNNV3, which ONNX Runtime cannot load.
+    for layer in model.layers:
+        if isinstance(layer, layers.LSTM):
+            layer.use_cudnn = False
+
+    model.save(artifacts_dir / f"{model.name}.keras")
+    onnx_path = artifacts_dir / f"{model.name}.onnx"
+    tf2onnx.convert.from_keras(
+        model,
+        input_signature=(
+            tf.TensorSpec(
+                (None, WINDOW_SIZE, len(FEATURES)),
+                tf.float32,
+                name="sensor_window",
+            ),
+        ),
+        opset=15,
+        output_path=str(onnx_path),
+    )
+
+    with (artifacts_dir / f"{model.name}_scaler.pkl").open("wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
-    
-    print(f"Model and scaler saved to {artifacts_dir.resolve()}")
+
+    scaler_data = {
+        "features": scaler.feature_names_in_.tolist(),
+        "mean": scaler.mean_.tolist(),
+        "scale": scaler.scale_.tolist()
+    }
+
+    with open(artifacts_dir / f"{model.name}_scaler.json", "w") as f:
+        json.dump(scaler_data, f)
+
+    print(f"Keras model, ONNX model, and scaler saved to {artifacts_dir.resolve()}")
 
     co2_std = scaler.scale_[scaler.feature_names_in_.tolist().index("co2")]
+    print("Saving model metadata and reporting metrics...")
+    save_mode_metadata(model, X_test, y_test, co2_std, 'ppm', 'co2')
+    print("Saved")
     report_persistence_baseline(X_test, y_test, co2_std)
     report_horizon_metrics(model, X_test, y_test, co2_std)
 

@@ -73,18 +73,7 @@ def plot_csv(csv_path: Path, output_path: Path | None = None) -> None:
         axis.grid(True, alpha=0.3)
         # Mark absent minute slots explicitly, including leading/trailing gaps
         # for a sensor within the full dataset's time range.
-        missing = values.isna()
-        if missing.any():
-            axis.scatter(
-                minute_data.index[missing],
-                [0] * int(missing.sum()),
-                marker="x",
-                color="#c53030",
-                s=18,
-                label="Missing minute",
-                clip_on=False,
-            )
-            axis.legend(loc="best")
+
 
     axes[-1].set_xlabel("Time (UTC)")
     fig.suptitle(f"Sensor measurements by minute — {csv_path.name}")

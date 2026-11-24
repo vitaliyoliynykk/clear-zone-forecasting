@@ -20,6 +20,7 @@ dependencies = [
     "tensorflow-metal>=1.2.0; sys_platform == 'darwin'",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
+    "tf2onnx>=1.16.1",
 ]
 
 [project.scripts]
